@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ScreenSource } from '../../preload/api'
 import ScreenSelector from './components/ScreenSelector'
 import Duration from './components/Duration'
+import Tour, { TourStep } from './components/Tour'
 import {
   AudioOptions,
   MultiScreenRecorder,
@@ -15,6 +16,39 @@ interface Notice {
   text: string
 }
 
+const TOUR_STEPS: TourStep[] = [
+  {
+    selector: '[data-tour="displays"]',
+    title: '1. Select displays',
+    body: 'Click the screens you want to record. You can pick more than one — each becomes part of the session.'
+  },
+  {
+    selector: '[data-tour="options"]',
+    title: '2. Configure recording',
+    body: 'Choose separate files (one per screen) or a combined file, and pick which audio sources to capture.'
+  },
+  {
+    selector: '[data-tour="output"]',
+    title: '3. Choose output folder',
+    body: 'Pick a base folder. Each recording is saved inside its own session-… subfolder so files stay organized.'
+  },
+  {
+    selector: '[data-tour="start"]',
+    title: '4. Start recording',
+    body: 'Hit Start when you are ready. Pause, resume, or stop any time from the controls bar.'
+  }
+]
+
+const TOUR_STORAGE_KEY = 'omni.tourSeen.v1'
+
+function tourSeenInitial(): boolean {
+  try {
+    return !localStorage.getItem(TOUR_STORAGE_KEY)
+  } catch {
+    return false
+  }
+}
+
 function App(): React.JSX.Element {
   const [sources, setSources] = useState<ScreenSource[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -22,18 +56,31 @@ function App(): React.JSX.Element {
   const [layout, setLayout] = useState<CombinedLayout>('grid')
   const [audio, setAudio] = useState<AudioOptions>({ mic: true, system: true })
   const [saveDir, setSaveDir] = useState<string | null>(null)
+  const [openWhenDone, setOpenWhenDone] = useState<boolean>(true)
   const [state, setState] = useState<RecorderState>('idle')
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [notice, setNotice] = useState<Notice | null>(null)
   const [savedFiles, setSavedFiles] = useState<string[]>([])
+  const [lastSessionDir, setLastSessionDir] = useState<string | null>(null)
+  const [showTour, setShowTour] = useState<boolean>(tourSeenInitial)
 
   const recorderRef = useRef<MultiScreenRecorder | null>(null)
+
+  const closeTour = useCallback((): void => {
+    setShowTour(false)
+    try {
+      localStorage.setItem(TOUR_STORAGE_KEY, '1')
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  const replayTour = (): void => setShowTour(true)
 
   const refreshSources = useCallback(async () => {
     try {
       const list = await window.api.getSources()
       setSources(list)
-      // Drop selections for screens that no longer exist.
       setSelected((prev) => {
         const next = new Set<string>()
         for (const s of list) if (prev.has(s.sourceId)) next.add(s.sourceId)
@@ -74,8 +121,8 @@ function App(): React.JSX.Element {
     [sources, selected]
   )
 
-  const canStart =
-    state === 'idle' && selectedSources.length > 0 && !!saveDir
+  const recording = state === 'recording' || state === 'paused' || state === 'stopping'
+  const canStart = state === 'idle' && selectedSources.length > 0 && !!saveDir
 
   const start = async (): Promise<void> => {
     if (!saveDir) {
@@ -88,6 +135,7 @@ function App(): React.JSX.Element {
     }
     setNotice(null)
     setSavedFiles([])
+    setLastSessionDir(null)
 
     const recorder = new MultiScreenRecorder({
       sources: selectedSources,
@@ -128,6 +176,7 @@ function App(): React.JSX.Element {
       const result = await rec.stop()
       setStartedAt(null)
       setSavedFiles(result.files)
+      setLastSessionDir(result.sessionDir)
       if (result.failures.length > 0) {
         setNotice({
           kind: 'error',
@@ -138,8 +187,11 @@ function App(): React.JSX.Element {
       } else if (result.files.length > 0) {
         setNotice({
           kind: 'success',
-          text: `Saved ${result.files.length} file(s) to ${saveDir}.`
+          text: `Saved ${result.files.length} file(s) to session folder.`
         })
+        if (openWhenDone && result.sessionDir) {
+          void window.api.openPath(result.sessionDir)
+        }
       }
     } catch (e) {
       setNotice({ kind: 'error', text: `Stop failed: ${(e as Error).message}` })
@@ -155,147 +207,242 @@ function App(): React.JSX.Element {
     else if (state === 'paused') rec.resume()
   }
 
-  const recording = state === 'recording' || state === 'paused' || state === 'stopping'
+  const stateLabel: Record<RecorderState, string> = {
+    idle: 'Idle',
+    starting: 'Starting',
+    recording: 'Recording',
+    paused: 'Paused',
+    stopping: 'Saving',
+    error: 'Error'
+  }
 
   return (
     <div className="app">
       <header className="header">
-        <h1>Multi-Screen Recorder</h1>
-        <div className="status">
-          <span className={`dot ${state}`} />
-          <span>{state}</span>
-          <Duration startedAt={startedAt} paused={state === 'paused'} />
+        <div className="brand">
+          <div className="brand-mark" aria-hidden="true" />
+          <div>
+            <h1>Omni Screen Recorder</h1>
+            <p className="subtitle">Capture one or many displays in a single session.</p>
+          </div>
+        </div>
+        <div className="header-right">
+          <button className="ghost" onClick={replayTour} title="Show the getting-started guide">
+            ? Guide
+          </button>
+          <div className="status">
+            <span className={`dot ${state}`} />
+            <span className="state-label">{stateLabel[state]}</span>
+            <Duration startedAt={startedAt} paused={state === 'paused'} />
+          </div>
         </div>
       </header>
 
-      <section className="panel">
-        <div className="panel-head">
-          <h2>Displays</h2>
-          <div className="row">
-            <button onClick={() => void refreshSources()} disabled={recording}>
-              Refresh
-            </button>
-            <button onClick={selectAll} disabled={recording || sources.length === 0}>
-              Select all
-            </button>
-            <button onClick={clearSel} disabled={recording || selected.size === 0}>
-              Clear
-            </button>
+      <main className="workspace">
+        <section className="panel displays-panel" data-tour="displays">
+          <div className="panel-head">
+            <div>
+              <h2>1 · Displays</h2>
+              <p className="panel-hint">
+                {selectedSources.length === 0
+                  ? 'Click a card to include that screen in the recording.'
+                  : `${selectedSources.length} of ${sources.length} selected.`}
+              </p>
+            </div>
+            <div className="row">
+              <button onClick={() => void refreshSources()} disabled={recording}>
+                Refresh
+              </button>
+              <button onClick={selectAll} disabled={recording || sources.length === 0}>
+                Select all
+              </button>
+              <button onClick={clearSel} disabled={recording || selected.size === 0}>
+                Clear
+              </button>
+            </div>
           </div>
-        </div>
-        <ScreenSelector
-          sources={sources}
-          selected={selected}
-          onToggle={toggleSelect}
-          disabled={recording}
-        />
-      </section>
-
-      <section className="panel">
-        <h2>Options</h2>
-        <div className="options">
-          <fieldset disabled={recording}>
-            <legend>Mode</legend>
-            <label>
-              <input
-                type="radio"
-                name="mode"
-                checked={mode === 'separate'}
-                onChange={() => setMode('separate')}
-              />
-              Separate files (one per screen)
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="mode"
-                checked={mode === 'combined'}
-                onChange={() => setMode('combined')}
-              />
-              Combined (single file)
-            </label>
-            {mode === 'combined' && (
-              <div className="sub">
-                <label>
-                  <input
-                    type="radio"
-                    name="layout"
-                    checked={layout === 'grid'}
-                    onChange={() => setLayout('grid')}
-                  />
-                  Grid
-                </label>
-                <label>
-                  <input
-                    type="radio"
-                    name="layout"
-                    checked={layout === 'side-by-side'}
-                    onChange={() => setLayout('side-by-side')}
-                  />
-                  Side-by-side
-                </label>
-              </div>
-            )}
-          </fieldset>
-
-          <fieldset disabled={recording}>
-            <legend>Audio</legend>
-            <label>
-              <input
-                type="checkbox"
-                checked={audio.mic}
-                onChange={(e) => setAudio((a) => ({ ...a, mic: e.target.checked }))}
-              />
-              Microphone
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={audio.system}
-                onChange={(e) => setAudio((a) => ({ ...a, system: e.target.checked }))}
-              />
-              System audio (Windows)
-            </label>
-          </fieldset>
-
-          <fieldset disabled={recording}>
-            <legend>Output</legend>
-            <button onClick={() => void chooseDir()}>Choose folder…</button>
-            <div className="path">{saveDir ?? 'No folder selected'}</div>
-          </fieldset>
-        </div>
-      </section>
-
-      <section className="controls">
-        {state === 'idle' && (
-          <button className="primary" disabled={!canStart} onClick={() => void start()}>
-            Start recording {selectedSources.length > 0 ? `(${selectedSources.length})` : ''}
-          </button>
-        )}
-        {(state === 'recording' || state === 'paused') && (
-          <>
-            <button onClick={togglePause}>{state === 'paused' ? 'Resume' : 'Pause'}</button>
-            <button className="danger" onClick={() => void stop()}>
-              Stop
-            </button>
-          </>
-        )}
-        {state === 'starting' && <button disabled>Starting…</button>}
-        {state === 'stopping' && <button disabled>Saving…</button>}
-      </section>
-
-      {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
-
-      {savedFiles.length > 0 && (
-        <section className="panel">
-          <h2>Saved files</h2>
-          <ul className="files">
-            {savedFiles.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
+          <div className="panel-scroll">
+            <ScreenSelector
+              sources={sources}
+              selected={selected}
+              onToggle={toggleSelect}
+              disabled={recording}
+            />
+          </div>
         </section>
-      )}
+
+        <aside className="side">
+          <section className="panel" data-tour="options">
+            <div className="panel-head">
+              <div>
+                <h2>2 · Options</h2>
+                <p className="panel-hint">Output format and audio sources.</p>
+              </div>
+            </div>
+            <div className="options">
+              <fieldset disabled={recording}>
+                <legend>Mode</legend>
+                <label>
+                  <input
+                    type="radio"
+                    name="mode"
+                    checked={mode === 'separate'}
+                    onChange={() => setMode('separate')}
+                  />
+                  Separate files (one per screen)
+                </label>
+                <label>
+                  <input
+                    type="radio"
+                    name="mode"
+                    checked={mode === 'combined'}
+                    onChange={() => setMode('combined')}
+                  />
+                  Combined (single file)
+                </label>
+                {mode === 'combined' && (
+                  <div className="sub">
+                    <label>
+                      <input
+                        type="radio"
+                        name="layout"
+                        checked={layout === 'grid'}
+                        onChange={() => setLayout('grid')}
+                      />
+                      Grid
+                    </label>
+                    <label>
+                      <input
+                        type="radio"
+                        name="layout"
+                        checked={layout === 'side-by-side'}
+                        onChange={() => setLayout('side-by-side')}
+                      />
+                      Side-by-side
+                    </label>
+                  </div>
+                )}
+              </fieldset>
+
+              <fieldset disabled={recording}>
+                <legend>Audio</legend>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={audio.mic}
+                    onChange={(e) => setAudio((a) => ({ ...a, mic: e.target.checked }))}
+                  />
+                  Microphone
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={audio.system}
+                    onChange={(e) => setAudio((a) => ({ ...a, system: e.target.checked }))}
+                  />
+                  System audio (Windows)
+                </label>
+              </fieldset>
+
+              <fieldset disabled={recording}>
+                <legend>After recording</legend>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={openWhenDone}
+                    onChange={(e) => setOpenWhenDone(e.target.checked)}
+                  />
+                  Open folder when finished
+                </label>
+              </fieldset>
+            </div>
+          </section>
+
+          <section className="panel" data-tour="output">
+            <div className="panel-head">
+              <div>
+                <h2>3 · Output folder</h2>
+                <p className="panel-hint">
+                  Each recording is saved into a new <code>session-…</code> subfolder.
+                </p>
+              </div>
+              <div className="row">
+                <button onClick={() => void chooseDir()} disabled={recording}>
+                  {saveDir ? 'Change…' : 'Choose…'}
+                </button>
+                {saveDir && (
+                  <button
+                    onClick={() => void window.api.openPath(saveDir)}
+                    title="Open in file explorer"
+                  >
+                    Open
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className={`path-box ${saveDir ? '' : 'empty'}`}>
+              {saveDir ?? 'No folder selected'}
+            </div>
+          </section>
+
+          {savedFiles.length > 0 && (
+            <section className="panel">
+              <div className="panel-head">
+                <div>
+                  <h2>Last session</h2>
+                  {lastSessionDir && <p className="panel-hint">{lastSessionDir}</p>}
+                </div>
+                {lastSessionDir && (
+                  <div className="row">
+                    <button onClick={() => void window.api.openPath(lastSessionDir)}>
+                      Open folder
+                    </button>
+                  </div>
+                )}
+              </div>
+              <ul className="files">
+                {savedFiles.map((f) => (
+                  <li key={f}>{f}</li>
+                ))}
+              </ul>
+            </section>
+          )}
+        </aside>
+      </main>
+
+      <footer className="footer">
+        {notice && <div className={`notice ${notice.kind}`}>{notice.text}</div>}
+        <section className="controls" data-tour="start">
+          {state === 'idle' && (
+            <button className="primary" disabled={!canStart} onClick={() => void start()}>
+              ● Start recording
+              {selectedSources.length > 0
+                ? ` (${selectedSources.length} screen${selectedSources.length === 1 ? '' : 's'})`
+                : ''}
+            </button>
+          )}
+          {(state === 'recording' || state === 'paused') && (
+            <>
+              <button onClick={togglePause}>{state === 'paused' ? 'Resume' : 'Pause'}</button>
+              <button className="danger" onClick={() => void stop()}>
+                Stop & save
+              </button>
+            </>
+          )}
+          {state === 'starting' && (
+            <button className="primary" disabled>
+              Starting…
+            </button>
+          )}
+          {state === 'stopping' && (
+            <button className="primary" disabled>
+              Saving…
+            </button>
+          )}
+        </section>
+      </footer>
+
+      {showTour && <Tour steps={TOUR_STEPS} onClose={closeTour} />}
     </div>
   )
 }

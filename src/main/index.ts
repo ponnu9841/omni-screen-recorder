@@ -10,6 +10,8 @@ const IPC = {
   GET_SOURCES: 'GET_SOURCES',
   CHOOSE_SAVE_DIR: 'CHOOSE_SAVE_DIR',
   SAVE_FILE: 'SAVE_FILE',
+  CREATE_SESSION_DIR: 'CREATE_SESSION_DIR',
+  OPEN_PATH: 'OPEN_PATH',
   DISPLAYS_CHANGED: 'DISPLAYS_CHANGED'
 } as const
 
@@ -65,6 +67,19 @@ function registerIpc(): void {
       return target
     }
   )
+
+  ipcMain.handle(IPC.CREATE_SESSION_DIR, async (_e, baseDir: string, name: string) => {
+    if (!baseDir || !name) throw new Error('CREATE_SESSION_DIR: missing baseDir/name')
+    const safeName = name.replace(/[\\/:*?"<>|]/g, '_')
+    const target = join(baseDir, safeName)
+    await fs.mkdir(target, { recursive: true })
+    return target
+  })
+
+  ipcMain.handle(IPC.OPEN_PATH, async (_e, target: string) => {
+    if (!target) return
+    await shell.openPath(target)
+  })
 }
 
 function broadcastDisplays(): void {

@@ -25,5 +25,7 @@ export interface RecorderApi {
   getSources: () => Promise<ScreenSource[]>
   chooseSaveDir: () => Promise<string | null>
   saveFile: (dir: string, filename: string, data: ArrayBuffer) => Promise<string>
+  createSessionDir: (baseDir: string, name: string) => Promise<string>
+  openPath: (target: string) => Promise<void>
   onDisplaysChanged: (cb: (displays: DisplayInfo[]) => void) => () => void
 }

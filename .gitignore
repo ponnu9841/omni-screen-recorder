@@ -6,3 +6,5 @@ out
 *.log*
 .claude
 .vscode
+tsconfig.node.tsbuildinfo
+tsconfig.web.tsbuildinfo

@@ -1,6 +1,6 @@
 # screen-recorder
 
-An Electron application with React and TypeScript
+A Simple Screen Recorder Application to record multiple screens and audio with a single click.
 
 ## Recommended IDE Setup
 

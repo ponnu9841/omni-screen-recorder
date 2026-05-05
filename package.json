@@ -1,9 +1,9 @@
 {
-  "name": "screen-recorder",
+  "name": "omni-screen-recorder",
   "version": "1.0.0",
-  "description": "An Electron application with React and TypeScript",
+  "description": "A Simple Screen Recorder Application to record multiple screens and audio with a single click.",
   "main": "./out/main/index.js",
-  "author": "example.com",
+  "author": "omniscreenrecorder.co.in",
   "homepage": "https://electron-vite.org",
   "license": "MIT",
   "scripts": {

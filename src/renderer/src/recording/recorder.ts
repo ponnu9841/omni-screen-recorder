@@ -54,6 +54,7 @@ interface Pipeline {
 interface SaveResult {
   files: string[]
   failures: { sourceId: string; reason: string }[]
+  sessionDir: string | null
 }
 
 function timestamp(): string {
@@ -84,6 +85,7 @@ export class MultiScreenRecorder {
   private micStream: MediaStream | null = null
   private combined: CombinedRecorder | null = null
   private failures: { sourceId: string; reason: string }[] = []
+  private sessionDir: string | null = null
 
   constructor(opts: RecorderOptions) {
     this.opts = opts
@@ -110,6 +112,12 @@ export class MultiScreenRecorder {
     this.setState('starting')
 
     try {
+      // Create a per-session subfolder so each recording is self-contained.
+      this.sessionDir = await window.api.createSessionDir(
+        this.opts.saveDir,
+        `session-${timestamp()}`
+      )
+
       // Mic is shared across all per-screen recorders in separate mode.
       if (this.opts.audio.mic) {
         try {
@@ -222,7 +230,7 @@ export class MultiScreenRecorder {
 
   async stop(): Promise<SaveResult> {
     if (this.state !== 'recording' && this.state !== 'paused') {
-      return { files: [], failures: this.failures }
+      return { files: [], failures: this.failures, sessionDir: this.sessionDir }
     }
     this.setState('stopping')
 
@@ -242,7 +250,7 @@ export class MultiScreenRecorder {
       await this.disposeAll()
       this.setState('idle')
     }
-    return { files, failures: this.failures }
+    return { files, failures: this.failures, sessionDir: this.sessionDir }
   }
 
   private stopAndSavePipeline(p: Pipeline): Promise<string | null> {
@@ -269,7 +277,8 @@ export class MultiScreenRecorder {
 
   private async saveBlob(blob: Blob, filename: string): Promise<string> {
     const buf = await blob.arrayBuffer()
-    return window.api.saveFile(this.opts.saveDir, filename, buf)
+    const dir = this.sessionDir ?? this.opts.saveDir
+    return window.api.saveFile(dir, filename, buf)
   }
 
   private tearDownPipeline(sourceId: string): void {

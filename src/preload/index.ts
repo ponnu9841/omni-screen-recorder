@@ -9,6 +9,9 @@ const api: RecorderApi = {
   chooseSaveDir: () => ipcRenderer.invoke('CHOOSE_SAVE_DIR') as Promise<string | null>,
   saveFile: (dir, filename, data) =>
     ipcRenderer.invoke('SAVE_FILE', { dir, filename, data }) as Promise<string>,
+  createSessionDir: (baseDir, name) =>
+    ipcRenderer.invoke('CREATE_SESSION_DIR', baseDir, name) as Promise<string>,
+  openPath: (target) => ipcRenderer.invoke('OPEN_PATH', target) as Promise<void>,
   onDisplaysChanged: (cb) => {
     const handler = (_e: IpcRendererEvent, d: DisplayInfo[]): void => cb(d)
     ipcRenderer.on('DISPLAYS_CHANGED', handler)
