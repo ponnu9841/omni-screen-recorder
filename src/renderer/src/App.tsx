@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import logo from '../../../resources/icon.png?asset'
+import logo from '../../../build/icon.png'
 import type { ScreenSource } from '../../preload/api'
 import ScreenSelector from './components/ScreenSelector'
 import Duration from './components/Duration'

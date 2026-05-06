@@ -1,5 +1,5 @@
 appId: com.electron.app
-productName: screen-recorder
+productName: omni-screen-recorder
 directories:
   buildResources: build
 files:
