@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import logo from '../../../resources/icon.png?asset'
 import type { ScreenSource } from '../../preload/api'
 import ScreenSelector from './components/ScreenSelector'
 import Duration from './components/Duration'
@@ -220,7 +221,7 @@ function App(): React.JSX.Element {
     <div className="app">
       <header className="header">
         <div className="brand">
-          <div className="brand-mark" aria-hidden="true" />
+          <img src={logo} alt="" aria-hidden="true" className="brand-mark" />
           <div>
             <h1>Omni Screen Recorder</h1>
             <p className="subtitle">Capture one or many displays in a single session.</p>
@@ -334,14 +335,14 @@ function App(): React.JSX.Element {
                   />
                   Microphone
                 </label>
-                <label>
+                {/* <label>
                   <input
                     type="checkbox"
                     checked={audio.system}
                     onChange={(e) => setAudio((a) => ({ ...a, system: e.target.checked }))}
                   />
                   System audio (Windows)
-                </label>
+                </label> */}
               </fieldset>
 
               <fieldset disabled={recording}>
